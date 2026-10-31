@@ -1,0 +1,1 @@
+source "$BR2_EXTERNAL_TAPBOT_PATH/package/tapbot/Config.in"

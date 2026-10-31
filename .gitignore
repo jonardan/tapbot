@@ -1,0 +1,8 @@
+# Buildroot output never lives here, but guard against an O= build in-tree
+/software/output/
+*.img
+# Host builds (make, make test in software/package/tapbot/src)
+/software/package/tapbot/src/tmc2209ctl
+/software/package/tapbot/src/tapbot
+/software/package/tapbot/src/test_fivebar
+/software/package/tapbot/src/test_path

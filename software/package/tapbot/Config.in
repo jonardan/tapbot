@@ -1,0 +1,7 @@
+config BR2_PACKAGE_TAPBOT
+	bool "tapbot"
+	help
+	  XY control of the tapbot five-bar (two NEMA17 on TMC2209
+	  drivers sharing one UART): "tapbot" moves the tip in straight
+	  lines inside the work area, "tmc2209ctl" configures and tests
+	  the drivers and motors one by one.
