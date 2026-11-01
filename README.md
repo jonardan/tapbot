@@ -395,7 +395,14 @@ picocom -b 115200 /dev/ttyACM0          # login: root, no password
 ## 🏠 Homing without endstops
 
 At power-on the tip must sit in the home corner: the bottom-left corner of
-the work area, next to the left motor (-100, 50). At boot the
+the work area, next to the left motor (-100, 50).
+
+That is the corner of the 200 × 100 mm work area, **not the corner of the
+frame**: the tip sits 75 mm to the left of the left motor axis and 50 mm in
+front of it. There the left motor arm points back to the left (237°, its
+elbow behind the motors) and the right motor arm almost straight forward
+(93°). Starting anywhere else, every move comes out distorted (a
+rectangle drawn as an ellipse). At boot the
 `S95tapbot` script configures the drivers and runs `tapbot sethome`, which
 takes the tip to be there and counts every step from that pose
 (`/run/tapbot.pos`).
