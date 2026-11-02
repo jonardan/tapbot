@@ -475,7 +475,9 @@ Open [`tools/disegna.html`](tools/disegna.html) in Chrome or Edge, straight
 from disk, on the PC the BeagleBone is plugged into.
 
 1. Draw in the white 200 × 100 mm area with *Mano libera*, *Linea*,
-   *Rettangolo* or *Cerchio*. Each stroke gets a number, and the list on
+   *Rettangolo*, *Cerchio*, or the ready shapes *Croce* (two strokes,
+   across then down), *Spirale* and *Cuore*: press at the centre and drag
+   out to size them. Each stroke gets a number, and the list on
    the right shows them in the order you drew them: tapbot draws them in
    that same order. *Annulla* (Ctrl+Z) removes the last one, the × next to
    a stroke removes that one. The drawing is kept when you close the page.

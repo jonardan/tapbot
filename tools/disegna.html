@@ -81,6 +81,9 @@ code { font-size: 12px; }
       <button data-tool="line" aria-pressed="false" title="Linea (L)">Linea</button>
       <button data-tool="rect" aria-pressed="false" title="Rettangolo (R)">Rettangolo</button>
       <button data-tool="circle" aria-pressed="false" title="Cerchio dal centro (C)">Cerchio</button>
+      <button data-tool="cross" aria-pressed="false" title="Croce dal centro: due tratti, orizzontale poi verticale (X)">Croce</button>
+      <button data-tool="spiral" aria-pressed="false" title="Spirale dal centro verso l'esterno (S)">Spirale</button>
+      <button data-tool="heart" aria-pressed="false" title="Cuore dal centro (H)">Cuore</button>
       <span class="sep"></span>
       <button id="undo" title="Annulla l'ultimo tratto (Ctrl+Z)">Annulla</button>
       <button id="clear" class="danger" title="Cancella tutto">Svuota</button>
@@ -205,18 +208,49 @@ function rdp(pts, eps) {
   if (dmax <= eps) return [a, b];
   return rdp(pts.slice(0, imax + 1), eps).slice(0, -1).concat(rdp(pts.slice(imax), eps));
 }
-function draftPts() {
+const SPIRAL_TURNS = 4, SPIRAL_STEP_MM = 1.5, HEART_PTS = 120;
+/* Archimedean spiral from the centre out to radius r */
+function spiralPts(c, r) {
+  const pts = [], k = r / (2 * Math.PI * SPIRAL_TURNS);
+  if (r < 2) return pts;
+  /* from 1 mm out, where the turns are gentle enough to run as one path */
+  for (let t = 1 / k; t <= 2 * Math.PI * SPIRAL_TURNS; ) {
+    const rr = k * t;
+    pts.push(inArea([c[0] + rr * Math.cos(t), c[1] + rr * Math.sin(t)]));
+    t += Math.min(10 * Math.PI / 180, SPIRAL_STEP_MM / rr);
+  }
+  const T = 2 * Math.PI * SPIRAL_TURNS;
+  pts.push(inArea([c[0] + r * Math.cos(T), c[1] + r * Math.sin(T)]));
+  return pts;
+}
+/* The classic heart curve, r wide either side of the centre */
+function heartPts(c, r) {
+  const pts = [], s = r / 16;
+  for (let i = 0; i <= HEART_PTS; i++) {
+    const t = 2 * Math.PI * i / HEART_PTS;
+    pts.push(inArea([c[0] + s * 16 * Math.sin(t) ** 3,
+      c[1] + s * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t))]));
+  }
+  return pts;
+}
+/* The strokes the pointer is drawing: one, or two for the cross */
+function draftStrokes() {
   if (!draft) return [];
-  const a = draft.a, b = draft.b || draft.a;
+  const a = draft.a, b = draft.b || draft.a, r = Math.hypot(b[0] - a[0], b[1] - a[1]);
   switch (draft.kind) {
-    case "free": return draft.pts;
-    case "line": return [a, b];
-    case "rect": return rectPts(a, b);
-    case "circle": return circlePts(a, Math.hypot(b[0] - a[0], b[1] - a[1]));
+    case "free": return [draft.pts];
+    case "line": return [[a, b]];
+    case "rect": return [rectPts(a, b)];
+    case "circle": return [circlePts(a, r)];
+    case "cross": return [[inArea([a[0] - r, a[1]]), inArea([a[0] + r, a[1]])],
+                          [inArea([a[0], a[1] + r]), inArea([a[0], a[1] - r])]];
+    case "spiral": return [spiralPts(a, r)];
+    case "heart": return [heartPts(a, r)];
   }
   return [];
 }
-const NAMES = { free: "mano libera", line: "linea", rect: "rettangolo", circle: "cerchio" };
+const NAMES = { free: "mano libera", line: "linea", rect: "rettangolo", circle: "cerchio",
+  cross: "croce", spiral: "spirale", heart: "cuore" };
 function strokeLen(pts) { let d = 0; for (let i = 1; i < pts.length; i++) d += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return d; }
 
 /* ---------- G-code ---------- */
@@ -277,8 +311,8 @@ function draw() {
     ctx.fillText(String(i + 1), sx, sy + .5); ctx.textBaseline = "alphabetic";
   });
   /* the stroke being drawn */
-  const d = draftPts();
-  if (d.length > 1) { ctx.strokeStyle = C.accent; ctx.lineWidth = 2; poly(d); ctx.stroke(); }
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 2;
+  for (const d of draftStrokes()) if (d.length > 1) { poly(d); ctx.stroke(); }
 }
 
 /* ---------- side panel ---------- */
@@ -325,11 +359,14 @@ cv.addEventListener("pointermove", e => {
 });
 function endPointer() {
   if (!draft) return;
-  let pts = draftPts();
-  if (draft.kind === "free") pts = rdp(pts, FREE_EPS_MM);
+  const kind = draft.kind;
+  let added = 0;
+  for (let pts of draftStrokes()) {
+    if (kind === "free") pts = rdp(pts, FREE_EPS_MM);
+    if (pts.length > 1 && strokeLen(pts) >= 1) { strokes.push({ kind, pts: pts.map(p => [r2(p[0]), r2(p[1])]) }); added++; }
+  }
   draft = null;
-  if (pts.length > 1 && strokeLen(pts) >= 1) { strokes.push({ kind: tool, pts: pts.map(p => [r2(p[0]), r2(p[1])]) }); changed(); }
-  else draw();
+  added ? changed() : draw();
 }
 cv.addEventListener("pointerup", endPointer);
 cv.addEventListener("pointercancel", () => { draft = null; draw(); });
@@ -344,7 +381,7 @@ $("speed").oninput = updatePanel;
 document.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT") return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); $("undo").click(); return; }
-  const k = { f: "free", l: "line", r: "rect", c: "circle" }[e.key.toLowerCase()];
+  const k = { f: "free", l: "line", r: "rect", c: "circle", x: "cross", s: "spiral", h: "heart" }[e.key.toLowerCase()];
   if (k && !e.ctrlKey && !e.metaKey) setTool(k);
 });
 $("save").onclick = () => {
