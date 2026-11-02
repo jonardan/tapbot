@@ -80,7 +80,7 @@ Seen from above, motors at the bottom, idlers at the top:
          |                                |
          |       work area 200 x 100      |
          |                                |
-   y=50  H--------------------------------+
+   y=50  +----------------H---------------+
         x=-100                         x=100
                   /                    \
            motor 1 (-25, 0)     motor 2 (25, 0)
@@ -94,12 +94,12 @@ Seen from above, motors at the bottom, idlers at the top:
 | distal arm, elbow to tip (`distal_mm`) | 125 mm |
 | idler pivots (`idler_y_mm`) | (±25, 200) mm |
 | work area (`area_mm`) | x -100..100, y 50..150 mm |
-| home, H (`home_mm`) | (-100, 50): bottom-left corner, next to the left motor |
+| home, H (`home_mm`) | (0, 59.37): both motor arms along the motor line, left at 180°, right at 0° |
 
 X/Y are in mm from halfway between the motor axes, +Y away from the
 motors. Motor angles are in degrees from the +X axis, counter-clockwise
 seen from above. Over the work area the left motor turns 76.6..241.9° and
-the right one -61.9..103.4°. At home they are at 237.34° and 93.34°. One
+the right one -61.9..103.4°. At home they are at 180° and 0°. One
 microstep (1/16) moves the tip 0.19 mm at most.
 
 All of it is in [`tapbot.conf`](software/package/tapbot/tapbot.conf),
@@ -379,7 +379,7 @@ sudo dd if=output-tapbot/images/sdcard.img of=/dev/sdX bs=4M conv=fsync status=p
 ```
 
 1. Put the card in the unpowered BeagleBone.
-2. Put the tip in the home corner (see below).
+2. Put the arms in the home pose (see below).
 3. Hold the S2 (BOOT) button, plug in the mini-USB cable, and let go of S2
    when the LEDs start blinking.
 4. Switch on the 12 V supply.
@@ -394,15 +394,12 @@ picocom -b 115200 /dev/ttyACM0          # login: root, no password
 
 ## 🏠 Homing without endstops
 
-At power-on the tip must sit in the home corner: the bottom-left corner of
-the work area, next to the left motor (-100, 50).
-
-That is the corner of the 200 × 100 mm work area, **not the corner of the
-frame**: the tip sits 75 mm to the left of the left motor axis and 50 mm in
-front of it. There the left motor arm points back to the left (237°, its
-elbow behind the motors) and the right motor arm almost straight forward
-(93°). Starting anywhere else, every move comes out distorted (a
-rectangle drawn as an ellipse). At boot the
+At power-on the arms must sit in the home pose: both motor arms lie along
+the line of the motors, parallel to the frame and pointing outward, the
+left one straight to the left (180°) and the right one straight to the
+right (0°). The elbows are then 220 mm apart and the tip sits in the
+middle, 59.37 mm in front of the motors: (0, 59.37). Starting anywhere
+else, every move comes out distorted (a rectangle drawn as an ellipse). At boot the
 `S95tapbot` script configures the drivers and runs `tapbot sethome`, which
 takes the tip to be there and counts every step from that pose
 (`/run/tapbot.pos`).
@@ -411,18 +408,18 @@ takes the tip to be there and counts every step from that pose
   right place.
 - If the 12 V was off at boot, run `tmc2209ctl -m all init` and
   `tapbot sethome` once it is on.
-- If the tip was moved by hand or a motor skipped steps, put it back in
-  the corner and run `tapbot sethome`.
+- If the tip was moved by hand or a motor skipped steps, put the arms back in
+  the home pose and run `tapbot sethome`.
 
 <a id="usage"></a>
 
 ## 🚀 Usage
 
 ```
-tapbot sethome          the tip is in the home corner now (done at boot)
+tapbot sethome          the arms are in the home pose now (done at boot)
 tapbot where            motor angles and tip X/Y
 tapbot move X Y [F]     straight line to X/Y at F mm/s (default 30)
-tapbot home [F]         back to the home corner
+tapbot home [F]         back to the home pose
 tapbot corners [F]      round the edge of the work area, then home
 tapbot fk A1 A2         tip X/Y for motor angles (no move)
 tapbot ik X Y           motor angles for a tip X/Y (no move)
@@ -451,8 +448,8 @@ Ctrl-C decelerates to a stop. `tmc2209ctl` works as in OpenSCARA
    counter-clockwise seen from above; the same for `-m 2`. If one turns
    the other way, set `invert_dir = 1` in its `[motorN]` section of
    `/etc/tapbot.conf`.
-3. Put the tip in the home corner, run `tapbot sethome`, then
-   `tapbot where`: 237.34° and 93.34°.
+3. Put the arms in the home pose, run `tapbot sethome`, then
+   `tapbot where`: 180° and 0°, tip at (0, 59.37).
 4. `tapbot move -90 60 10`, then `tapbot move 0 100 10`: short and slow,
    with a hand on the 12 V switch.
 5. `tapbot corners 20`, and check with a ruler that the corners are

@@ -9,9 +9,9 @@
  * invert_dir = 1 for that motor.  X/Y in mm, origin halfway between the
  * motor axes, +Y away from the motors (see fivebar.h).
  *
- * There are no endstops: at power-on the tip sits in the home corner
- * (home_mm, the bottom-left corner of the work area, near the left
- * motor), and the boot script runs 'tapbot sethome' to say so.  From then
+ * There are no endstops: at power-on the arms sit in the home pose
+ * (home_mm: both motor arms along the motor line, pointing outward, the
+ * left one at 180 deg and the right one at 0 deg), and the boot script runs 'tapbot sethome' to say so.  From then
  * on /run/tapbot.pos counts every step.  'tapbot home' brings the tip
  * back there before switching off.
  *
@@ -38,12 +38,12 @@ static void usage(void)
 	printf(
 "Usage: tapbot [-c CONF] COMMAND [ARGS]\n"
 "\n"
-"  sethome               the tip is in the home corner now (%.0f, %.0f):\n"
+"  sethome               the arms are in the home pose now, tip at (%.2f, %.2f):\n"
 "                        start counting from there (done at boot)\n"
 "  where                 print the motor angles and the tip X/Y\n"
 "  move X Y [F]          move the tip to X/Y (mm) in a straight line at\n"
 "                        F mm/s (default line_speed, %.0f)\n"
-"  home [F]              move the tip back to the home corner; do it\n"
+"  home [F]              move the tip back to the home pose; do it\n"
 "                        before switching off\n"
 "  corners [F]           go round the edge of the work area, then home\n"
 "  fk A1 A2              print the tip X/Y for motor angles A1 A2\n"
@@ -246,7 +246,7 @@ static int path_to(const struct fivebar *f, int n, const double (*xy)[2],
 		return -1;
 	}
 	if (get_angles(now)) {
-		err("position unknown: put the tip in the home corner and run "
+		err("position unknown: put the arms in the home pose and run "
 		    "'tapbot sethome'");
 		return -1;
 	}

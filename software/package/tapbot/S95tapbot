@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # At boot: configure both TMC2209 drivers from /etc/tapbot.conf, and take
-# the tip to be in the home corner (there are no endstops: it must be
+# the arms to be in the home pose (there are no endstops: they must be
 # there at power-on).  Both need the 12 V motor supply; if it is off, run
 # "tmc2209ctl -m all init" and "tapbot sethome" once it is on.
 #
@@ -14,7 +14,7 @@ case "$1" in
 		else
 			echo "not all responding (12V off?)"
 		fi
-		printf "tapbot: tip in the home corner: "
+		printf "tapbot: arms in the home pose: "
 		if tapbot sethome >/dev/null 2>&1; then
 			echo "OK"
 		else
