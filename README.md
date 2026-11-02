@@ -459,6 +459,10 @@ from disk, on the PC the BeagleBone is plugged into.
    highlighted stroke follow tapbot as it draws; at the end it goes back
    to home. **■ Ferma** stops it (like Ctrl-C).
 
+*Terminale della scheda* is the board's console inside the page: type any
+command (↑ ↓ for the last ones) or use the buttons for `where`, `sethome`,
+`home`, the drivers' status, free motors and Ctrl-C. No picocom needed.
+
 The arms must be in the home pose and `tapbot sethome` done, as for any
 move. *Salva .gcode* saves the same file, to run by hand with
 `tapbot gcode`.
