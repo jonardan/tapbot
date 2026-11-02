@@ -47,6 +47,7 @@ struct config cfg = {
 	.joint_teeth = 1,
 	.line_speed = 20,
 	.line_accel = 100,
+	.corner_deg = 20,
 };
 
 /* cfg is the active motor: a copy of motors[cur] */
@@ -174,6 +175,8 @@ static int set_option(const char *key, const char *val)
 			return -1;
 	} else if (!strcmp(key, "line_speed"))
 		cfg.line_speed = atof(val);
+	else if (!strcmp(key, "corner_deg"))
+		cfg.corner_deg = atof(val);
 	else if (!strcmp(key, "line_accel")) {
 		cfg.line_accel = atof(val);
 	} else {

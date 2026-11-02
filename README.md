@@ -21,6 +21,7 @@ A solenoid on the tip will do the tapping.
 - [Flash and boot](#flash-and-boot)
 - [Homing without endstops](#homing-without-endstops)
 - [Usage](#usage)
+- [Drawing from the PC](#drawing-from-the-pc)
 - [First test on the hardware](#first-test-on-the-hardware)
 - [How the kinematics work](#how-the-kinematics-work)
 - [Repository layout](#repository-layout)
@@ -421,6 +422,7 @@ tapbot where            motor angles and tip X/Y
 tapbot move X Y [F]     straight line to X/Y at F mm/s (default 30)
 tapbot home [F]         back to the home pose
 tapbot corners [F]      round the edge of the work area, then home
+tapbot gcode [-n] FILE  run a drawing (G0, G1, M3/M5); - reads stdin
 tapbot fk A1 A2         tip X/Y for motor angles (no move)
 tapbot ik X Y           motor angles for a tip X/Y (no move)
 tapbot jog M DEG [RPM]  turn one motor, no checks: bring-up only
@@ -437,6 +439,36 @@ tapbot home
 Every move is planned in 1 mm steps and checked before anything turns.
 Ctrl-C decelerates to a stop. `tmc2209ctl` works as in OpenSCARA
 (`status`, `turn`, `enable`, `disable`, ...), with `/etc/tapbot.conf`.
+
+<a id="drawing-from-the-pc"></a>
+
+## ✏️ Drawing from the PC
+
+Open [`tools/disegna.html`](tools/disegna.html) in Chrome or Edge, straight
+from disk, on the PC the BeagleBone is plugged into.
+
+1. Draw in the white 200 × 100 mm area with *Mano libera*, *Linea*,
+   *Rettangolo* or *Cerchio*. Each stroke gets a number, and the list on
+   the right shows them in the order you drew them: tapbot draws them in
+   that same order. *Annulla* (Ctrl+Z) removes the last one, the × next to
+   a stroke removes that one. The drawing is kept when you close the page.
+2. Close picocom if it is open, press **Collega** and pick the
+   BeagleBone's port (`ttyACM0`).
+3. Press **▶ Disegna su tapbot**. The page logs in, copies the drawing to
+   the board and runs `tapbot gcode` on it. The progress bar and the
+   highlighted stroke follow tapbot as it draws; at the end it goes back
+   to home. **■ Ferma** stops it (like Ctrl-C).
+
+The arms must be in the home pose and `tapbot sethome` done, as for any
+move. *Salva .gcode* saves the same file, to run by hand with
+`tapbot gcode`.
+
+On the board, `tapbot gcode` reads the whole file and checks every
+millimetre of it before anything moves, then runs it line by line in
+order. A curve made of short segments runs as one smooth path; it stops
+only at corners sharper than `corner_deg` (20°). `M3` / `M5` (tip down /
+up) are there for the solenoid and do nothing yet, so for now the tip
+also draws the travel between strokes.
 
 <a id="first-test-on-the-hardware"></a>
 

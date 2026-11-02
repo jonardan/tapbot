@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "drawing.h"
 #include "fivebar.h"
 #include "path.h"
 #include "tmc2209.h"
@@ -32,6 +33,11 @@
 #define NMOTORS	2
 
 static const char *const motor_name[NMOTORS] = { "left", "right" };
+
+/* Set by 'gcode': moves don't print where they end up */
+static int quiet;
+/* A move was stopped by Ctrl-C */
+static int stopped;
 
 static void usage(void)
 {
@@ -46,6 +52,11 @@ static void usage(void)
 "  home [F]              move the tip back to the home pose; do it\n"
 "                        before switching off\n"
 "  corners [F]           go round the edge of the work area, then home\n"
+"  gcode [-n] FILE       run a drawing: G0 X Y (travel), G1 X Y F (draw,\n"
+"                        F in mm/min), M3 / M5 (tip down / up, for the\n"
+"                        solenoid); every point is checked first, and\n"
+"                        the strokes run in the order of the file.\n"
+"                        FILE - reads stdin; -n only checks\n"
 "  fk A1 A2              print the tip X/Y for motor angles A1 A2\n"
 "  ik X Y                print the motor angles for tip X/Y\n"
 "                        fk and ik only compute, they don't move\n"
@@ -304,12 +315,14 @@ static int path_to(const struct fivebar *f, int n, const double (*xy)[2],
 	if (move_path(NMOTORS, both, npts, pts, dist, &speed,
 		      motors[0].line_accel, &interrupted))
 		goto out;
-	if (speed < asked)
+	if (speed < asked && !quiet)
 		printf("speed lowered to %.1f mm/s: a motor would go over its "
 		       "rpm\n", speed);
-	if (interrupted)
+	if (interrupted) {
 		printf("interrupted\n");
-	ret = cmd_where();
+		stopped = 1;
+	}
+	ret = quiet ? 0 : cmd_where();
 out:
 	free(th);
 	free(pts);
@@ -379,6 +392,208 @@ static int cmd_corners(int argc, char **argv)
 	xy[4][0] = a[0]; xy[4][1] = a[2];
 	memcpy(xy[5], motors[0].home_mm, sizeof(xy[5]));
 	return path_to(&f, 6, (const double (*)[2])xy, speed);
+}
+
+/*
+ * gcode [-n] FILE: run a drawing (see drawing.h).  FILE - reads stdin up
+ * to M2 or the end.  The whole drawing is read and every point of it
+ * checked before anything moves; then the moves run in the order of the
+ * file.  Consecutive G1 lines at the same feed run as one path, without
+ * stopping between them, while the path turns by at most corner_deg at
+ * each joint (curves made of short segments); a sharper corner stops
+ * there.  Each stroke (a run of G1 lines) is announced as "stroke K of M"
+ * when it starts.  M3 / M5 will lower and lift the tip once the solenoid
+ * is in; for now they do nothing, so travel (G0) draws too.  -n only
+ * checks.
+ */
+#define TRAVEL_SPEED_MUL 2	/* G0 runs at line_speed times this */
+
+struct op {
+	enum dr_kind kind;	/* DR_TRAVEL, DR_DRAW, DR_TIP_DOWN, DR_TIP_UP */
+	double x, y, speed;	/* moves: target (mm) and speed (mm/s) */
+	int stroke;		/* moves: the stroke a G1 starts, else 0 */
+	int line;		/* in the file */
+};
+
+/* Read and check the whole drawing into *ops; the number of strokes */
+static int gcode_load(const struct fivebar *f, FILE *in, const char *name,
+		      double x0, double y0, struct op **ops, int *nops)
+{
+	double x = x0, y = y0, feed = motors[0].line_speed;
+	struct op *v = NULL;
+	struct dr_cmd c;
+	char *buf = NULL, msg[96];
+	size_t cap = 0;
+	ssize_t len;
+	int n = 0, size = 0, line = 0, strokes = 0, drawing = 0, ret = -1;
+
+	while ((len = getline(&buf, &cap, in)) >= 0) {
+		line++;
+		while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r'))
+			buf[--len] = '\0';
+		if (dr_parse(buf, &c, msg, sizeof(msg))) {
+			err("%s:%d: %s", name, line, msg);
+			goto out;
+		}
+		if (c.kind == DR_NONE)
+			continue;
+		if (c.kind == DR_END)
+			break;
+		if (n == size) {
+			struct op *nv;
+
+			size = size ? 2 * size : 256;
+			nv = realloc(v, size * sizeof(*v));
+			if (!nv) {
+				err("out of memory");
+				goto out;
+			}
+			v = nv;
+		}
+		memset(&v[n], 0, sizeof(v[n]));
+		v[n].kind = c.kind;
+		v[n].line = line;
+		if (c.kind == DR_TRAVEL || c.kind == DR_DRAW) {
+			double nx = c.has_x ? c.x : x, ny = c.has_y ? c.y : y;
+			double d = hypot(nx - x, ny - y);
+			enum fb_result r = FB_OK;
+			int k, steps = (int)ceil(d / LINE_SEG_MM);
+
+			/* Every millimetre of the way, and the end */
+			for (k = 1; k <= steps && r == FB_OK; k++)
+				r = fb_check(f, x + (nx - x) * k / steps,
+					     y + (ny - y) * k / steps);
+			if (r == FB_OK)
+				r = fb_check(f, nx, ny);
+			if (r != FB_OK) {
+				err("%s:%d: %.2f, %.2f: %s", name, line, nx, ny,
+				    fb_strerror(r));
+				goto out;
+			}
+			/* Already there: nothing to move */
+			if (d < 1e-6)
+				continue;
+			if (c.kind == DR_DRAW && c.has_f)
+				feed = c.f / 60.0;
+			v[n].x = x = nx;
+			v[n].y = y = ny;
+			v[n].speed = c.kind == DR_DRAW ? feed :
+				     motors[0].line_speed * TRAVEL_SPEED_MUL;
+			if (c.kind == DR_DRAW && !drawing)
+				v[n].stroke = ++strokes;
+			drawing = c.kind == DR_DRAW;
+		} else {
+			drawing = 0;
+		}
+		n++;
+	}
+	*ops = v;
+	*nops = n;
+	v = NULL;
+	ret = strokes;
+out:
+	free(v);
+	free(buf);
+	return ret;
+}
+
+static int cmd_gcode(int argc, char **argv)
+{
+	int dry = argc > 1 && !strcmp(argv[1], "-n");
+	double th[NMOTORS], x0, y0, (*xy)[2] = NULL;
+	struct op *ops = NULL;
+	struct fivebar f;
+	const char *name;
+	FILE *in;
+	int i, j, n, nops = 0, strokes, ret = -1;
+
+	if (argc != 2 + dry) {
+		err("usage: gcode [-n] FILE   (FILE - reads stdin)");
+		return -1;
+	}
+	if (get_fivebar(&f))
+		return -1;
+	name = argv[1 + dry];
+	/* From where the tip is; a check alone may start from home */
+	if (get_angles(th) == 0 && fb_forward(&f, th, &x0, &y0) == FB_OK) {
+		/* x0, y0 set */
+	} else if (dry) {
+		x0 = motors[0].home_mm[0];
+		y0 = motors[0].home_mm[1];
+	} else {
+		err("position unknown: put the arms in the home pose and run "
+		    "'tapbot sethome'");
+		return -1;
+	}
+	in = strcmp(name, "-") ? fopen(name, "r") : stdin;
+	if (!in) {
+		err("%s: cannot open", name);
+		return -1;
+	}
+	strokes = gcode_load(&f, in, name, x0, y0, &ops, &nops);
+	if (in != stdin)
+		fclose(in);
+	if (strokes < 0)
+		goto out;
+	printf("%s: %d strokes, all inside the work area\n", name, strokes);
+	if (dry) {
+		ret = 0;
+		goto out;
+	}
+	xy = malloc((nops + 1) * sizeof(*xy));
+	if (!xy) {
+		err("out of memory");
+		goto out;
+	}
+	quiet = 1;
+	for (i = 0; i < nops; i = j) {
+		const struct op *o = &ops[i];
+		double px = x0, py = y0;
+
+		if (o->kind == DR_TIP_DOWN || o->kind == DR_TIP_UP) {
+			/* The solenoid goes here */
+			j = i + 1;
+			continue;
+		}
+		if (o->stroke) {
+			printf("stroke %d of %d\n", o->stroke, strokes);
+			fflush(stdout);
+		}
+		/* One path while the moves are alike and turn gently */
+		n = 0;
+		for (j = i; j < nops; j++) {
+			const struct op *p = &ops[j];
+
+			if (p->kind != o->kind || p->speed != o->speed ||
+			    (j > i && p->stroke))
+				break;
+			if (j > i && dr_turn(px, py, ops[j - 1].x,
+					     ops[j - 1].y, p->x, p->y) >
+				     motors[0].corner_deg)
+				break;
+			if (j > i) {
+				px = ops[j - 1].x;
+				py = ops[j - 1].y;
+			}
+			xy[n][0] = p->x;
+			xy[n][1] = p->y;
+			n++;
+		}
+		if (path_to(&f, n, (const double (*)[2])xy, o->speed))
+			goto out;
+		x0 = ops[j - 1].x;
+		y0 = ops[j - 1].y;
+		if (stopped || stop_req) {
+			printf("stopped at line %d\n", ops[j - 1].line);
+			goto out;
+		}
+	}
+	printf("done\n");
+	ret = 0;
+out:
+	free(ops);
+	free(xy);
+	return ret;
 }
 
 /* jog M DEG [RPM]: one motor, no check; the position stays counted */
@@ -456,6 +671,8 @@ int main(int argc, char **argv)
 		return cmd_fk(argc, argv) ? 1 : 0;
 	if (!strcmp(c, "ik"))
 		return cmd_ik(argc, argv) ? 1 : 0;
+	if (!strcmp(c, "gcode"))
+		return cmd_gcode(argc, argv) ? 1 : 0;
 	if (!strcmp(c, "jog"))
 		return cmd_jog(argc, argv) ? 1 : 0;
 	err("unknown command '%s' (try 'tapbot help')", c);

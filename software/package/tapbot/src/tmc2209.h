@@ -84,6 +84,7 @@ struct config {
 	double home_mm[2];	/* tip x, y at power-on (the home corner) */
 	double line_speed;	/* default tip speed, mm/s (shared) */
 	double line_accel;	/* tip acceleration, mm/s^2 (shared) */
+	double corner_deg;	/* drawings: stop at turns sharper than this */
 };
 
 extern struct config cfg, motors[MAX_MOTORS];

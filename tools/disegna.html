@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tapbot · disegna</title>
+<!--
+  Draw on the PC, then "Disegna su tapbot" sends the drawing over the
+  BeagleBone's mini-USB console (Web Serial: Chrome or Edge) and runs
+  "tapbot gcode" on it.  The strokes run in the order they were drawn.
+  Open this file straight from disk; nothing is loaded from the network.
+-->
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66;
+  --line: #d9d9d4; --area: #ffffff; --grid: #ececE7; --accent: #2563eb;
+  --stroke: #1d1d1b; --travel: #b8b8b2; --ok: #15803d; --bad: #b91c1c;
+  --hi: #f59e0b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615; --panel: #1f1f1d; --ink: #ecece8; --muted: #9a9a94;
+    --line: #34342f; --area: #121211; --grid: #232320; --accent: #60a5fa;
+    --stroke: #f2f2ee; --travel: #55554f; --ok: #4ade80; --bad: #f87171;
+    --hi: #fbbf24;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { padding: 12px 16px; display: flex; gap: 12px; align-items: baseline;
+  flex-wrap: wrap; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 18px; margin: 0; }
+header span { color: var(--muted); }
+main { display: grid; grid-template-columns: 1fr 320px; gap: 16px; padding: 16px; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.tools { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--ink); cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .45; cursor: default; }
+button.danger:hover:not(:disabled) { border-color: var(--bad); color: var(--bad); }
+.sep { width: 1px; background: var(--line); margin: 0 4px; }
+canvas { width: 100%; display: block; border-radius: 8px; touch-action: none; cursor: crosshair; }
+.readout { color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 6px; min-height: 20px; }
+h2 { font-size: 14px; margin: 0 0 8px; }
+.side { display: flex; flex-direction: column; gap: 16px; }
+ol { margin: 0; padding-left: 22px; max-height: 260px; overflow: auto; }
+ol li { padding: 2px 0; cursor: default; }
+ol li.hl { color: var(--hi); font-weight: 600; }
+ol li button { padding: 0 6px; margin-left: 6px; font-size: 12px; }
+label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 6px 0; }
+input[type=number] { width: 90px; font: inherit; padding: 4px 6px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.row { display: flex; gap: 6px; flex-wrap: wrap; }
+.bar { height: 6px; background: var(--grid); border-radius: 3px; overflow: hidden; margin: 10px 0 6px; }
+.bar div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.note { color: var(--muted); margin: 6px 0 0; }
+pre { max-height: 160px; overflow: auto; background: var(--bg); border-radius: 6px; padding: 6px;
+  font-size: 12px; margin: 8px 0 0; white-space: pre-wrap; }
+details summary { cursor: pointer; color: var(--muted); }
+code { font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>tapbot · disegna</h1>
+  <span>Disegna nell'area 200 × 100 mm: tapbot ripete i tratti nello stesso ordine.</span>
+</header>
+<main>
+  <section class="card">
+    <div class="tools" role="toolbar" aria-label="Strumenti">
+      <button data-tool="free" aria-pressed="true" title="Mano libera (F)">Mano libera</button>
+      <button data-tool="line" aria-pressed="false" title="Linea (L)">Linea</button>
+      <button data-tool="rect" aria-pressed="false" title="Rettangolo (R)">Rettangolo</button>
+      <button data-tool="circle" aria-pressed="false" title="Cerchio dal centro (C)">Cerchio</button>
+      <span class="sep"></span>
+      <button id="undo" title="Annulla l'ultimo tratto (Ctrl+Z)">Annulla</button>
+      <button id="clear" class="danger" title="Cancella tutto">Svuota</button>
+      <span class="sep"></span>
+      <button id="snap" aria-pressed="false" title="Aggancia linee e forme alla griglia di 5 mm">Griglia 5 mm</button>
+    </div>
+    <canvas id="cv" aria-label="Area di disegno"></canvas>
+    <div class="readout" id="readout"></div>
+  </section>
+
+  <aside class="side">
+    <section class="card">
+      <h2>Tratti, in ordine</h2>
+      <ol id="list"></ol>
+      <p class="note" id="stats"></p>
+    </section>
+
+    <section class="card">
+      <h2>tapbot</h2>
+      <label for="speed">Velocità del disegno (mm/s)<input type="number" id="speed" value="20" min="1" max="100" step="1"></label>
+      <div class="row">
+        <button id="connect" title="Scegli la porta della BeagleBone (di solito ttyACM0)">Collega</button>
+        <button id="run" class="primary" disabled>▶ Disegna su tapbot</button>
+        <button id="stop" disabled title="Ferma tapbot (come Ctrl-C)">■ Ferma</button>
+      </div>
+      <div class="bar" aria-hidden="true"><div id="bar"></div></div>
+      <p class="note" id="rstatus"></p>
+      <details><summary>Uscita della scheda</summary><pre id="rlog"></pre></details>
+    </section>
+
+    <section class="card">
+      <h2>File</h2>
+      <div class="row">
+        <button id="save">Salva .gcode</button>
+      </div>
+      <p class="note">Sulla scheda: <code>tapbot gcode disegno.gcode</code></p>
+    </section>
+  </aside>
+</main>
+
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+
+/* ---------- the machine, as in /etc/tapbot.conf ---------- */
+const AREA = { x0: -100, x1: 100, y0: 50, y1: 150 };
+const BASE = 50, HOME = [0, 59.372];
+const CIRCLE_SEGS = 72;		/* 5 degrees per side: under corner_deg, one path */
+const FREE_MIN_MM = 0.5;	/* freehand: points closer than this are dropped */
+const FREE_EPS_MM = 0.25;	/* freehand: simplification tolerance */
+const STORE = "tapbot-disegno";
+
+/* ---------- state ---------- */
+let strokes = [];		/* [{kind, pts: [[x, y], ...]}] in drawing order */
+let tool = "free", snap = false, draft = null, hover = null, hl = -1;
+let W = 0, H = 0, view = { s: 1, ox: 0, oy: 0 };
+
+function store() { try { localStorage.setItem(STORE, JSON.stringify(strokes)); } catch (e) { /* private window */ } }
+function restore() {
+  try { const s = JSON.parse(localStorage.getItem(STORE)); if (Array.isArray(s)) strokes = s; } catch (e) { /* none */ }
+}
+
+/* ---------- view: mm <-> canvas pixels, motors at the bottom ---------- */
+const MARGIN = { x0: -130, x1: 130, y0: -20, y1: 165 };
+const cv = $("cv"), ctx = cv.getContext("2d");
+function resize() {
+  const w = cv.clientWidth, h = w * (MARGIN.y1 - MARGIN.y0) / (MARGIN.x1 - MARGIN.x0);
+  const dpr = window.devicePixelRatio || 1;
+  cv.style.height = `${h}px`; cv.width = w * dpr; cv.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W = w; H = h;
+  view.s = w / (MARGIN.x1 - MARGIN.x0);
+  draw();
+}
+function w2s(x, y) { return [(x - MARGIN.x0) * view.s, (MARGIN.y1 - y) * view.s]; }
+function s2w(sx, sy) { return [sx / view.s + MARGIN.x0, MARGIN.y1 - sy / view.s]; }
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+function inArea(p) { return [clamp(p[0], AREA.x0, AREA.x1), clamp(p[1], AREA.y0, AREA.y1)]; }
+function snapP(p) { return snap ? [Math.round(p[0] / 5) * 5, Math.round(p[1] / 5) * 5] : p; }
+const r2 = v => Math.round(v * 100) / 100;
+
+/* ---------- shapes ---------- */
+function rectPts(a, b) { return [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]], [a[0], a[1]]]; }
+function circlePts(c, r) {
+  const pts = [];
+  for (let i = 0; i <= CIRCLE_SEGS; i++) {
+    const t = 2 * Math.PI * i / CIRCLE_SEGS;
+    pts.push(inArea([c[0] + r * Math.cos(t), c[1] + r * Math.sin(t)]));
+  }
+  return pts;
+}
+/* Ramer-Douglas-Peucker */
+function rdp(pts, eps) {
+  if (pts.length < 3) return pts;
+  const [a, b] = [pts[0], pts[pts.length - 1]];
+  const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+  let imax = 0, dmax = 0;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p = pts[i];
+    const d = len ? Math.abs(dy * p[0] - dx * p[1] + b[0] * a[1] - b[1] * a[0]) / len
+                  : Math.hypot(p[0] - a[0], p[1] - a[1]);
+    if (d > dmax) { dmax = d; imax = i; }
+  }
+  if (dmax <= eps) return [a, b];
+  return rdp(pts.slice(0, imax + 1), eps).slice(0, -1).concat(rdp(pts.slice(imax), eps));
+}
+function draftPts() {
+  if (!draft) return [];
+  const a = draft.a, b = draft.b || draft.a;
+  switch (draft.kind) {
+    case "free": return draft.pts;
+    case "line": return [a, b];
+    case "rect": return rectPts(a, b);
+    case "circle": return circlePts(a, Math.hypot(b[0] - a[0], b[1] - a[1]));
+  }
+  return [];
+}
+const NAMES = { free: "mano libera", line: "linea", rect: "rettangolo", circle: "cerchio" };
+function strokeLen(pts) { let d = 0; for (let i = 1; i < pts.length; i++) d += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return d; }
+
+/* ---------- G-code ---------- */
+function gcode() {
+  const f = Math.round(clamp(+$("speed").value || 20, 1, 100) * 60);
+  const out = ["; tapbot drawing, strokes in the order they were drawn", "G21", "G90", "M5"];
+  strokes.forEach((s, i) => {
+    const p = s.pts;
+    out.push(`; stroke ${i + 1} (${NAMES[s.kind]})`);
+    out.push(`G0 X${r2(p[0][0])} Y${r2(p[0][1])}`);
+    out.push("M3");
+    for (let k = 1; k < p.length; k++) out.push(`G1 X${r2(p[k][0])} Y${r2(p[k][1])}${k === 1 ? ` F${f}` : ""}`);
+    out.push("M5");
+  });
+  out.push(`G0 X${HOME[0]} Y${HOME[1]}`, "M2");
+  return out.join("\n") + "\n";
+}
+
+/* ---------- drawing ---------- */
+let C = {};
+function readColors() { const s = getComputedStyle(document.documentElement); for (const k of ["area", "grid", "line", "stroke", "travel", "muted", "accent", "hi", "ink"]) C[k] = s.getPropertyValue(`--${k}`).trim(); }
+function poly(pts) { ctx.beginPath(); pts.forEach((p, i) => { const [x, y] = w2s(p[0], p[1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); }
+function draw() {
+  if (!W) return;
+  ctx.clearRect(0, 0, W, H);
+  /* work area and 10 mm grid */
+  const [ax, ay] = w2s(AREA.x0, AREA.y1), [bx, by] = w2s(AREA.x1, AREA.y0);
+  ctx.fillStyle = C.area; ctx.fillRect(ax, ay, bx - ax, by - ay);
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.beginPath();
+  for (let x = AREA.x0; x <= AREA.x1; x += 10) { const [sx] = w2s(x, 0); ctx.moveTo(sx, ay); ctx.lineTo(sx, by); }
+  for (let y = AREA.y0; y <= AREA.y1; y += 10) { const [, sy] = w2s(0, y); ctx.moveTo(ax, sy); ctx.lineTo(bx, sy); }
+  ctx.stroke();
+  ctx.strokeStyle = C.line; ctx.strokeRect(ax, ay, bx - ax, by - ay);
+  /* motors, for orientation */
+  ctx.fillStyle = C.muted; ctx.font = "12px system-ui, sans-serif"; ctx.textAlign = "center";
+  for (const x of [-BASE / 2, BASE / 2]) {
+    const [sx, sy] = w2s(x, 0), r = 21 * view.s;
+    ctx.globalAlpha = .15; ctx.fillRect(sx - r, sy - r, 2 * r, 2 * r); ctx.globalAlpha = 1;
+  }
+  ctx.fillText("motori", ...w2s(0, -12));
+  /* home */
+  const [hx, hy] = w2s(HOME[0], HOME[1]);
+  ctx.strokeStyle = C.muted; ctx.beginPath(); ctx.arc(hx, hy, 4, 0, 2 * Math.PI); ctx.stroke();
+  ctx.fillText("home", hx, hy + 16);
+  /* travel between strokes, dashed */
+  ctx.setLineDash([4, 4]); ctx.strokeStyle = C.travel; ctx.lineWidth = 1;
+  let prev = HOME;
+  for (const s of strokes) { poly([prev, s.pts[0]]); ctx.stroke(); prev = s.pts[s.pts.length - 1]; }
+  ctx.setLineDash([]);
+  /* strokes, with their number at the start */
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  strokes.forEach((s, i) => {
+    ctx.strokeStyle = i === hl ? C.hi : C.stroke; ctx.lineWidth = i === hl ? 3 : 2;
+    poly(s.pts); ctx.stroke();
+    const [sx, sy] = w2s(s.pts[0][0], s.pts[0][1]);
+    ctx.fillStyle = C.accent; ctx.beginPath(); ctx.arc(sx, sy, 8, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.font = "bold 10px system-ui, sans-serif"; ctx.textBaseline = "middle";
+    ctx.fillText(String(i + 1), sx, sy + .5); ctx.textBaseline = "alphabetic";
+  });
+  /* the stroke being drawn */
+  const d = draftPts();
+  if (d.length > 1) { ctx.strokeStyle = C.accent; ctx.lineWidth = 2; poly(d); ctx.stroke(); }
+}
+
+/* ---------- side panel ---------- */
+function updatePanel() {
+  const ol = $("list"); ol.innerHTML = "";
+  strokes.forEach((s, i) => {
+    const li = document.createElement("li");
+    li.textContent = `${NAMES[s.kind]}, ${strokeLen(s.pts).toFixed(0)} mm`;
+    const del = document.createElement("button"); del.textContent = "×"; del.title = "Elimina questo tratto";
+    del.onclick = () => { strokes.splice(i, 1); hl = -1; changed(); };
+    li.appendChild(del);
+    li.onmouseenter = () => { hl = i; draw(); };
+    li.onmouseleave = () => { hl = -1; draw(); };
+    ol.appendChild(li);
+  });
+  let len = 0, travel = 0, prev = HOME;
+  for (const s of strokes) { len += strokeLen(s.pts); travel += Math.hypot(s.pts[0][0] - prev[0], s.pts[0][1] - prev[1]); prev = s.pts[s.pts.length - 1]; }
+  const v = clamp(+$("speed").value || 20, 1, 100);
+  $("stats").textContent = strokes.length
+    ? `${strokes.length} tratti, ${len.toFixed(0)} mm disegnati, circa ${Math.ceil((len / v + travel / 60) / 60 * 10) / 10} min.`
+    : "Ancora niente: disegna nell'area bianca.";
+  robotButtons();
+}
+function changed() { store(); updatePanel(); draw(); }
+
+/* ---------- pointer ---------- */
+function evW(e) { const r = cv.getBoundingClientRect(); return s2w(e.clientX - r.left, e.clientY - r.top); }
+cv.addEventListener("pointerdown", e => {
+  cv.setPointerCapture(e.pointerId);
+  const p = inArea(tool === "free" ? evW(e) : snapP(evW(e)));
+  draft = { kind: tool, a: p, b: p, pts: [p] };
+  draw();
+});
+cv.addEventListener("pointermove", e => {
+  const raw = evW(e);
+  $("readout").textContent = `x ${raw[0].toFixed(1)}  y ${raw[1].toFixed(1)} mm`;
+  if (!draft) return;
+  const p = inArea(tool === "free" ? raw : snapP(raw));
+  if (draft.kind === "free") {
+    const q = draft.pts[draft.pts.length - 1];
+    if (Math.hypot(p[0] - q[0], p[1] - q[1]) >= FREE_MIN_MM) draft.pts.push(p);
+  } else draft.b = p;
+  draw();
+});
+function endPointer() {
+  if (!draft) return;
+  let pts = draftPts();
+  if (draft.kind === "free") pts = rdp(pts, FREE_EPS_MM);
+  draft = null;
+  if (pts.length > 1 && strokeLen(pts) >= 1) { strokes.push({ kind: tool, pts: pts.map(p => [r2(p[0]), r2(p[1])]) }); changed(); }
+  else draw();
+}
+cv.addEventListener("pointerup", endPointer);
+cv.addEventListener("pointercancel", () => { draft = null; draw(); });
+cv.addEventListener("pointerleave", () => { $("readout").textContent = ""; });
+
+function setTool(t) { tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); }
+document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
+$("undo").onclick = () => { if (strokes.length) { strokes.pop(); changed(); } };
+$("clear").onclick = () => { if (strokes.length && confirm("Cancellare tutto il disegno?")) { strokes = []; changed(); } };
+$("snap").onclick = () => { snap = !snap; $("snap").setAttribute("aria-pressed", snap); };
+$("speed").oninput = updatePanel;
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); $("undo").click(); return; }
+  const k = { f: "free", l: "line", r: "rect", c: "circle" }[e.key.toLowerCase()];
+  if (k && !e.ctrlKey && !e.metaKey) setTool(k);
+});
+$("save").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([gcode()], { type: "text/plain" }));
+  a.download = "disegno.gcode"; a.click(); URL.revokeObjectURL(a.href);
+};
+
+/* ---------- tapbot over the USB cable (Web Serial, Chrome / Edge) ----------
+ * Get a shell prompt on the board's console (logging in as root if asked),
+ * type the file in as a here-document one line per "> " prompt, check its
+ * line count, then run tapbot gcode on it and follow the "stroke K of M"
+ * it prints.  Ferma sends Ctrl-C, which decelerates tapbot to a stop. */
+const EOF_MARK = "TAPBOT_EOF_7f3a", BOARD_FILE = "/tmp/disegno.gcode";
+const enc = new TextEncoder();
+let port = null, writer = null, reader = null, rx = "", partial = "", logLines = [], job = null;
+function rstatus(html) { $("rstatus").innerHTML = html; }
+function robotButtons() {
+  $("connect").textContent = port ? "Scollega" : "Collega";
+  $("run").disabled = !port || !!job || !strokes.length;
+  $("stop").disabled = !port;
+}
+function onBoardText(t) {
+  rx += t;
+  const parts = (partial + t).split("\n");
+  partial = parts.pop();
+  for (let l of parts) {
+    l = l.replace(/\r/g, "");
+    logLines.push(l); if (logLines.length > 300) logLines.shift();
+    if (job && job.running) {
+      const m = l.match(/^stroke (\d+) of (\d+)/);
+      if (m) { job.stroke = +m[1]; hl = job.stroke - 1; draw(); showProgress(); }
+      if (/^error:|^stopped|^interrupted/.test(l)) job.err = l.replace(/^error: /, "");
+    }
+  }
+  const lg = $("rlog"); lg.textContent = logLines.slice(-80).join("\n"); lg.scrollTop = lg.scrollHeight;
+}
+async function readLoop(p) {
+  const dec = new TextDecoder();
+  while (p === port && p.readable) {
+    const r = reader = p.readable.getReader();
+    try {
+      for (;;) { const { value, done } = await r.read(); if (done) break; onBoardText(dec.decode(value, { stream: true })); }
+    } catch (e) { /* cable pulled or port closed */ } finally { r.releaseLock(); reader = null; }
+    if (p === port) { port = null; writer = null; rstatus("Scheda scollegata."); if (job) job.abort = true; robotButtons(); }
+  }
+}
+function send(t) { return writer.write(enc.encode(t)); }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+/* Wait until rx matches re; drop rx up to the end of the match */
+async function waitFor(re, ms) {
+  const t0 = performance.now();
+  for (;;) {
+    const m = rx.match(re);
+    if (m) { rx = rx.slice(m.index + m[0].length); return m; }
+    if (job && job.abort) throw new Error("Fermato.");
+    if (!port) throw new Error("La scheda si è scollegata.");
+    if (performance.now() - t0 > ms) throw new Error("La scheda non risponde.");
+    await sleep(15);
+  }
+}
+function showProgress() {
+  const j = job;
+  if (j.running) {
+    $("bar").style.width = `${(Math.max(0, j.stroke - 1) / j.strokes * 100).toFixed(1)}%`;
+    rstatus(`Disegno in corso: <b>tratto ${j.stroke || 1} di ${j.strokes}</b>.`);
+  } else {
+    $("bar").style.width = `${(j.sent / j.total * 100).toFixed(1)}%`;
+    rstatus(`Copio il disegno sulla scheda: <b>${j.sent} di ${j.total}</b> righe.`);
+  }
+}
+async function connectRobot() {
+  if (port) {
+    const p = port, w = writer, r = reader; port = null; writer = null;
+    if (job) job.abort = true;
+    try { if (r) await r.cancel(); w.releaseLock(); await p.close(); } catch (e) { /* already gone */ }
+    rstatus("Scollegato."); robotButtons(); return;
+  }
+  if (!("serial" in navigator)) {
+    rstatus("Questo browser non può usare il cavo USB: apri <code>tools/disegna.html</code> con Chrome o Edge.");
+    return;
+  }
+  try {
+    const p = await navigator.serial.requestPort();
+    await p.open({ baudRate: 115200 });
+    port = p; writer = p.writable.getWriter(); rx = ""; partial = "";
+    readLoop(p);
+    rstatus("Collegato. Premi <b>Disegna su tapbot</b> (chiudi picocom se è aperto).");
+  } catch (e) {
+    if (e && e.name === "NotFoundError") rstatus("Nessuna porta scelta.");
+    else rstatus(`Non riesco ad aprire la porta: ${e && e.message ? e.message : e}. È aperta in picocom? Su Linux serve il gruppo <code>dialout</code>.`);
+  }
+  robotButtons();
+}
+/*
+ * Get to a "# " prompt from wherever the console is: the login prompt after
+ * a boot (log in as root), a password prompt, a here-document left open
+ * (Ctrl-C) or a shell.
+ */
+async function shellPrompt() {
+  rx = ""; await send("\n");
+  const t0 = performance.now();
+  while (performance.now() - t0 < 20000) {
+    await sleep(700);
+    if (!port) throw new Error("La scheda si è scollegata.");
+    const tail = rx.slice(-80);
+    if (/login:\s*$/.test(tail)) { rx = ""; rstatus("Entro come root…"); await send("root\n"); }
+    else if (/Password:\s*$/.test(tail)) { rx = ""; await send("\n"); }
+    else if (/\n> $/.test(tail)) { rx = ""; await send("\x03\n"); }
+    else if (/[#$] $/.test(tail)) return;
+    else if (!rx) await send("\n");
+  }
+  throw new Error("La scheda non risponde: è accesa e collegata col cavo mini-USB? Chiudi picocom se è aperto.");
+}
+async function runRobot() {
+  if (!port || job || !strokes.length) return;
+  const lines = gcode().replace(/\n$/, "").split("\n");
+  job = { total: lines.length, sent: 0, running: false, abort: false, err: "", stroke: 0, strokes: strokes.length };
+  robotButtons();
+  try {
+    await shellPrompt();
+    rx = ""; await send("echo READY_$((40+2))\n");
+    await waitFor(/READY_42/, 5000);
+    await sleep(200); rx = "";
+    await send(`cat > ${BOARD_FILE} <<'${EOF_MARK}'\n`);
+    for (const l of lines) {
+      await waitFor(/\n> /, 5000);
+      await send(l + "\n");
+      job.sent++; if (job.sent % 20 === 0 || job.sent === lines.length) showProgress();
+    }
+    await waitFor(/\n> /, 5000);
+    await send(EOF_MARK + "\n"); await sleep(300); rx = "";
+    await send(`echo LINES_$(wc -l < ${BOARD_FILE})\n`);
+    const m = await waitFor(/LINES_(\d+)/, 5000);
+    if (+m[1] !== lines.length) throw new Error(`Copia incompleta: ${m[1]} righe su ${lines.length}. Riprova.`);
+    job.running = true; showProgress();
+    await send(`tapbot gcode ${BOARD_FILE}; echo TAPBOT_EXIT_$?\n`);
+    const e = await waitFor(/TAPBOT_EXIT_(\d+)/, 6 * 3600 * 1000);
+    job.running = false;
+    if (+e[1] === 0) { $("bar").style.width = "100%"; rstatus(`<b>Disegno finito.</b> ${job.strokes} tratti, tapbot è tornato in home.`); }
+    else rstatus(`<span style="color:var(--bad)">tapbot si è fermato: ${job.err || "guarda l'uscita della scheda"}</span>`);
+  } catch (err) {
+    rstatus(`<span style="color:var(--bad)">${err.message}</span>`);
+  } finally {
+    job = null; hl = -1; draw(); robotButtons();
+  }
+}
+$("connect").onclick = connectRobot;
+$("run").onclick = runRobot;
+$("stop").onclick = async () => {
+  if (!port) return;
+  if (job) job.abort = !job.running;	/* while copying: give up; while drawing: tapbot stops itself */
+  try { await send("\x03"); } catch (e) { /* port gone */ }
+  rstatus("Ferma inviato (Ctrl-C).");
+};
+if (navigator.serial) navigator.serial.addEventListener("disconnect", e => { if (e.target === port) { port = null; writer = null; rstatus("Scheda scollegata."); robotButtons(); } });
+
+/* ---------- start ---------- */
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); draw(); });
+restore();
+readColors();
+updatePanel();
+rstatus("serial" in navigator ? "Collega la BeagleBone col cavo mini-USB e premi <b>Collega</b>."
+  : "Per disegnare dal cavo USB apri questa pagina con Chrome o Edge.");
+new ResizeObserver(resize).observe(cv);
+window.addEventListener("resize", resize);
+resize();
+window.__tapbot = { gcode, setStrokes: s => { strokes = s; changed(); } };
+})();
+</script>
+</body>
+</html>

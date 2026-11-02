@@ -6,3 +6,4 @@
 /software/package/tapbot/src/tapbot
 /software/package/tapbot/src/test_fivebar
 /software/package/tapbot/src/test_path
+tools/__pycache__/
