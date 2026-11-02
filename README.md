@@ -149,9 +149,36 @@ fits a Snapmaker A250 bed (all under 220 mm).
 | [`2_Bracci/PassiveProximalArm_x2.stl`](hardware/plotter-5bar/stl/2_Bracci/) | 2 | 101 × 16 × 21 | idler arm with its printed 8 mm elbow pin and a spacer on the bearing |
 | [`2_Bracci/PIATTO_tutti_i_bracci_8pz.stl`](hardware/plotter-5bar/stl/2_Bracci/) | – | 141 × 213 × 21 | all 8 arms above laid out on one bed, 8 mm apart |
 | [`3_Effettore/EffectorHub_SolenoidHolder_x1.stl`](hardware/plotter-5bar/stl/3_Effettore/) | 1 | 24 × 20 × 81 | tip hub: solenoid sleeve with a clamp screw boss, and the 8 mm pin the four distal arms stack on |
+| [`3_Effettore/PencilHolder_x1.stl`](hardware/plotter-5bar/stl/3_Effettore/) | (1) | Ø 16 × 75 | **pencil holder, alternative effector**: same collar and 8 mm pin as the solenoid holder, with a snap-in clip for a round 7 mm pencil underneath (see below) |
 | [`4_Perni/M5Sleeve_x2.stl`](hardware/plotter-5bar/stl/4_Perni/) | 2 | Ø 10 × 15 | flanged sleeve around the M5 axle inside a motor-side distal elbow |
 | [`4_Perni/PinCap_x3.stl`](hardware/plotter-5bar/stl/4_Perni/) | 3 | Ø 14 × 2 | printed washer that closes an 8 mm pin, held by an M4 × 9 |
 | | **18** | | |
+
+### ✏️ Pencil holder (alternative effector)
+
+`PencilHolder_x1.stl` takes the place of the solenoid holder, for drawing
+instead of tapping. Its collar and 8 mm pin are identical to the
+solenoid holder's, so the four distal arms stack on it the same way, closed
+by the same PinCap and M4 × 9. Under the collar, coaxial with the pin, a
+C-shaped clip holds a round 7 mm pencil: the pencil tip is exactly the
+tip the kinematics compute.
+
+| What | Value |
+|---|---|
+| clip bore | 6.85 mm (`PencilD − PencilGrip`, slight grip on a 7 mm pencil) |
+| clip opening | 5.8 mm (`0.83 · PencilD`, about 116°), rounded lips |
+| clip length, wall | 40 mm, 2.2 mm |
+| pencil length that fits | the collar is the top stop: up to 64 mm to the table, 54 mm to a 10 mm phone |
+
+Push the pencil into the clip from the side, then slide it to set the
+height. A full-length pencil does not fit under the arms: cut one to
+about 60 mm. Print it standing, clip down, pin up, no supports. In the
+Fusion model it is the hidden component `PencilHolder`, with its own
+parameters `PencilD`, `PencilGrip`, `ClipWall`, `ClipMouth` and `ClipL`.
+
+<p align="center">
+  <img src="hardware/plotter-5bar/docs/pencil-holder.png" width="260" alt="Pencil holder">
+</p>
 
 Cura settings, PLA, 0.4 mm nozzle:
 
