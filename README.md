@@ -148,7 +148,7 @@ fits a Snapmaker A250 bed (all under 220 mm).
 | [`2_Bracci/DistalArm_x4.stl`](hardware/plotter-5bar/stl/2_Bracci/) | 4 | 141 × 16 × 14 | distal arm, 8.3 mm eyes; the taller eye is the elbow |
 | [`2_Bracci/PassiveProximalArm_x2.stl`](hardware/plotter-5bar/stl/2_Bracci/) | 2 | 101 × 16 × 21 | idler arm with its printed 8 mm elbow pin and a spacer on the bearing |
 | [`2_Bracci/PIATTO_tutti_i_bracci_8pz.stl`](hardware/plotter-5bar/stl/2_Bracci/) | – | 141 × 213 × 21 | all 8 arms above laid out on one bed, 8 mm apart |
-| [`3_Effettore/EffectorHub_SolenoidHolder_x1.stl`](hardware/plotter-5bar/stl/3_Effettore/) | 1 | 24 × 20 × 81 | tip hub: solenoid sleeve with a clamp screw boss, and the 8 mm pin the four distal arms stack on |
+| [`3_Effettore/EffectorHub_SolenoidHolder_x1.stl`](hardware/plotter-5bar/stl/3_Effettore/) | 1 | 24 × 20 × 81 | tip hub: solenoid sleeve with a clamp screw boss, a cable slot open from the base (slide the solenoid wires in from below), and the 8 mm pin the four distal arms stack on |
 | [`3_Effettore/PencilHolder_x1.stl`](hardware/plotter-5bar/stl/3_Effettore/) | (1) | Ø 16 × 75 | **pencil holder, alternative effector**: same collar and 8 mm pin as the solenoid holder, with a snap-in clip for a round 7 mm pencil underneath (see below) |
 | [`4_Perni/M5Sleeve_x2.stl`](hardware/plotter-5bar/stl/4_Perni/) | 2 | Ø 10 × 15 | flanged sleeve around the M5 axle inside a motor-side distal elbow |
 | [`4_Perni/PinCap_x3.stl`](hardware/plotter-5bar/stl/4_Perni/) | 3 | Ø 14 × 2 | printed washer that closes an 8 mm pin, held by an M4 × 9 |
