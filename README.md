@@ -5,7 +5,12 @@ Two NEMA 17 steppers, two TMC2209 drivers and a BeagleBone Black move a
 tip anywhere over a 200 × 100 mm area, in straight lines, in millimetres.
 A solenoid on the tip will do the tapping.
 
-![tapbot, the dual five-bar plotter, from the Fusion model](hardware/plotter-5bar/docs/plotter-5bar-iso.png)
+<p align="center">
+  <img src="hardware/plotter-5bar/docs/tapbot-drawing-heart.gif" width="640" alt="tapbot drawing a heart with a pencil: animation of the dual five-bar mechanism from the Fusion model">
+  <br>
+  <em>tapbot drawing a heart: Fusion animation of the dual five-bar mechanism.</em>
+  <a href="hardware/plotter-5bar/docs/tapbot-drawing-heart.mp4">Full-quality video (MP4)</a>
+</p>
 
 ## 📑 Contents
 
@@ -259,6 +264,8 @@ a 10 mm thick phone lying on the table.
 <a id="parametric-fusion-model"></a>
 
 ## 🧩 Parametric Fusion model
+
+![tapbot, the dual five-bar plotter, from the Fusion model](hardware/plotter-5bar/docs/plotter-5bar-iso.png)
 
 [`hardware/plotter-5bar/fusion/`](hardware/plotter-5bar/fusion/) holds the
 CAD in three forms:
